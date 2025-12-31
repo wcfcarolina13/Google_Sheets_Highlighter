@@ -17,7 +17,7 @@ Since this extension isn't on the Chrome Web Store, you'll need to install it ma
 
 1. **Download** this repository (Code → Download ZIP) and unzip it, or clone it:
    ```
-   git clone https://github.com/YOUR_USERNAME/google-sheets-row-highlighter.git
+   git clone https://github.com/wcfcarolina13/Google_Sheets_Highlighter.git
    ```
 
 2. Open Chrome and go to `chrome://extensions/`
