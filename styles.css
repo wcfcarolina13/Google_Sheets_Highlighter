@@ -1,0 +1,5 @@
+/* Row Highlighter Extension Styles */
+
+#row-highlighter-overlay {
+  transition: top 0.05s ease-out, height 0.05s ease-out;
+}

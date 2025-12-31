@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Google Sheets Row Highlighter",
+  "version": "1.0",
+  "description": "Highlights the current row as you navigate in Google Sheets",
+  "permissions": ["storage"],
+  "host_permissions": ["https://docs.google.com/spreadsheets/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://docs.google.com/spreadsheets/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
