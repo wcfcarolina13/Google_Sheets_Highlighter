@@ -107,12 +107,20 @@
     const rightEdge = window.innerWidth;
     const width = rightEdge - leftEdge;
 
+    // Find the top boundary of the grid area (below frozen rows and column headers)
+    let gridTopBoundary = 0;
+    const columnHeaders = document.querySelector('.column-headers-wrapper');
+    if (columnHeaders) {
+      gridTopBoundary = columnHeaders.getBoundingClientRect().bottom;
+    }
+
     const rowInfo = {
       rowIndex: Math.round(cellRect.top),
       top: cellRect.top,
       left: leftEdge,
       width: width,
-      height: rowHeight
+      height: rowHeight,
+      gridTop: gridTopBoundary
     };
 
     // Skip if same row
@@ -130,17 +138,33 @@
     const mode = MODES[currentMode];
     if (!mode) return;
 
+    // Calculate clipping if the row is partially above the grid area
+    let top = rowInfo.top;
+    let height = rowInfo.height;
+    let clipTop = 0;
+
+    if (top < rowInfo.gridTop) {
+      // Row is partially or fully above the visible grid area
+      clipTop = rowInfo.gridTop - top;
+      if (clipTop >= height) {
+        // Row is completely above the grid - hide the highlight
+        highlightOverlay.style.cssText = 'display: none;';
+        return;
+      }
+    }
+
     // Build the complete style string
     // z-index 100 keeps it above the grid but below modals/dialogs
     let styleStr = `
       position: fixed;
       pointer-events: none;
       z-index: 100;
-      top: ${rowInfo.top}px;
+      top: ${top}px;
       left: ${rowInfo.left}px;
       width: ${rowInfo.width}px;
-      height: ${rowInfo.height}px;
+      height: ${height}px;
       box-sizing: border-box;
+      clip-path: inset(${clipTop}px 0 0 0);
     `;
 
     if (mode.type === 'fill') {
