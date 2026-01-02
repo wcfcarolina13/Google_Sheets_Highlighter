@@ -107,11 +107,34 @@
     const rightEdge = window.innerWidth;
     const width = rightEdge - leftEdge;
 
-    // Find the top boundary of the grid area (below frozen rows and column headers)
+    // Find the top boundary of the grid area (below toolbars and frozen rows)
     let gridTopBoundary = 0;
-    const columnHeaders = document.querySelector('.column-headers-wrapper');
-    if (columnHeaders) {
-      gridTopBoundary = columnHeaders.getBoundingClientRect().bottom;
+
+    // Try multiple selectors to find the top of the data area
+    const possibleTopElements = [
+      document.querySelector('.frozen-rows-wrapper'),  // Frozen rows container
+      document.querySelector('.row-header-wrapper'),   // Row numbers area
+      document.querySelector('.grid-scrollable-wrapper'), // Scrollable grid area
+      document.querySelector('[role="grid"]'),         // Grid element
+    ];
+
+    for (const el of possibleTopElements) {
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.top > gridTopBoundary) {
+          gridTopBoundary = rect.top;
+        }
+      }
+    }
+
+    // If we still don't have a good boundary, use the row headers top position
+    if (gridTopBoundary === 0 && rowHeaders) {
+      gridTopBoundary = rowHeaders.getBoundingClientRect().top;
+    }
+
+    // Fallback: estimate based on typical Sheets UI (toolbar + formula bar ~ 140px)
+    if (gridTopBoundary === 0) {
+      gridTopBoundary = 140;
     }
 
     const rowInfo = {
@@ -187,6 +210,8 @@
       left: rowInfo.left,
       width: rowInfo.width,
       height: rowInfo.height,
+      gridTop: rowInfo.gridTop,
+      clipTop: clipTop,
       mode: currentMode
     });
   }
