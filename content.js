@@ -131,10 +131,11 @@
     if (!mode) return;
 
     // Build the complete style string
+    // z-index 100 keeps it above the grid but below modals/dialogs
     let styleStr = `
       position: fixed;
       pointer-events: none;
-      z-index: 9999;
+      z-index: 100;
       top: ${rowInfo.top}px;
       left: ${rowInfo.left}px;
       width: ${rowInfo.width}px;
