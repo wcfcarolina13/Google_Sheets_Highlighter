@@ -7,8 +7,9 @@
   'use strict';
 
   let currentMode = 'off';
-  let lastHighlightedRow = null;
   let highlightOverlay = null;
+  let animationFrameId = null;
+  let isUpdating = false;
 
   // Mode configurations
   const MODES = {
@@ -19,32 +20,44 @@
     borderPurple: { type: 'border', color: '#8B00FF' }
   };
 
+  // Cache for mode styles (avoid recalculating)
+  let cachedModeStyle = '';
+  let cachedMode = '';
+
   // Initialize
   function init() {
     chrome.storage.sync.get(['highlightMode'], function(result) {
       if (result.highlightMode) {
         currentMode = result.highlightMode;
+        updateModeStyle();
       }
     });
 
     chrome.storage.onChanged.addListener(function(changes, namespace) {
       if (changes.highlightMode) {
         currentMode = changes.highlightMode.newValue;
+        updateModeStyle();
         if (currentMode === 'off') {
           removeHighlight();
         } else {
-          updateHighlight();
+          scheduleUpdate();
         }
       }
     });
 
     createOverlay();
 
-    document.addEventListener('mouseup', handleSelectionChange);
-    document.addEventListener('keyup', handleSelectionChange);
-    document.addEventListener('click', handleSelectionChange);
+    // Selection change events
+    document.addEventListener('mouseup', scheduleUpdate);
+    document.addEventListener('keyup', scheduleUpdate);
+    document.addEventListener('click', scheduleUpdate);
 
-    observeSheetChanges();
+    // Scroll events - use passive listeners for better performance
+    document.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
+    document.addEventListener('wheel', scheduleUpdate, { capture: true, passive: true });
+
+    // Start animation loop for smooth updates
+    startAnimationLoop();
 
     console.log('Row Highlighter extension loaded');
   }
@@ -52,15 +65,48 @@
   function createOverlay() {
     highlightOverlay = document.createElement('div');
     highlightOverlay.id = 'row-highlighter-overlay';
+    // Set base styles that don't change
+    highlightOverlay.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 100;
+      display: none;
+      box-sizing: border-box;
+    `;
     document.body.appendChild(highlightOverlay);
   }
 
-  function handleSelectionChange() {
-    if (currentMode === 'off') {
-      removeHighlight();
+  function updateModeStyle() {
+    if (cachedMode === currentMode) return;
+    cachedMode = currentMode;
+
+    const mode = MODES[currentMode];
+    if (!mode) {
+      cachedModeStyle = '';
       return;
     }
-    setTimeout(updateHighlight, 50);
+
+    if (mode.type === 'fill') {
+      cachedModeStyle = `background-color: ${mode.color}; mix-blend-mode: ${mode.blendMode || 'normal'}; border: none;`;
+    } else if (mode.type === 'border') {
+      cachedModeStyle = `background-color: transparent; border: 2px solid ${mode.color};`;
+    }
+  }
+
+  function scheduleUpdate() {
+    if (currentMode === 'off') return;
+    isUpdating = true;
+  }
+
+  function startAnimationLoop() {
+    function loop() {
+      if (isUpdating && currentMode !== 'off') {
+        updateHighlight();
+        isUpdating = false;
+      }
+      animationFrameId = requestAnimationFrame(loop);
+    }
+    loop();
   }
 
   function updateHighlight() {
@@ -69,53 +115,39 @@
       return;
     }
 
-    // Find the active cell border - the blue box around selected cell
+    // Find the active cell border
     const activeCellBorder = document.querySelector('.active-cell-border');
     if (!activeCellBorder) return;
 
-    // Get the cell's bounding rect
     const cellRect = activeCellBorder.getBoundingClientRect();
 
-    // The active-cell-border might have small height, so get height from its parent or style
+    // Get row height
     let rowHeight = cellRect.height;
-
-    // If height is too small, try to get it from the computed style or parent
     if (rowHeight < 10) {
-      // Try getting height from the cell input wrapper or parent elements
       const cellInput = document.querySelector('.cell-input');
       if (cellInput) {
-        const inputRect = cellInput.getBoundingClientRect();
-        if (inputRect.height > rowHeight) {
-          rowHeight = inputRect.height;
-        }
+        rowHeight = Math.max(rowHeight, cellInput.getBoundingClientRect().height);
       }
-
-      // Fallback: use a reasonable default row height
-      if (rowHeight < 10) {
-        rowHeight = 21; // Default Google Sheets row height
-      }
+      if (rowHeight < 10) rowHeight = 21;
     }
 
-    // Find the left edge (after row numbers column)
+    // Get left edge
     let leftEdge = 0;
     const rowHeaders = document.querySelector('.row-headers-wrapper');
     if (rowHeaders) {
       leftEdge = rowHeaders.getBoundingClientRect().right;
     }
 
-    // Use full viewport width
-    const rightEdge = window.innerWidth;
-    const width = rightEdge - leftEdge;
+    // Get width
+    const width = window.innerWidth - leftEdge;
 
-    // Find the top boundary of the grid area (below toolbars and frozen rows)
+    // Find grid top boundary
     let gridTopBoundary = 0;
-
-    // Try multiple selectors to find the top of the data area
     const possibleTopElements = [
-      document.querySelector('.frozen-rows-wrapper'),  // Frozen rows container
-      document.querySelector('.row-header-wrapper'),   // Row numbers area
-      document.querySelector('.grid-scrollable-wrapper'), // Scrollable grid area
-      document.querySelector('[role="grid"]'),         // Grid element
+      document.querySelector('.frozen-rows-wrapper'),
+      document.querySelector('.row-header-wrapper'),
+      document.querySelector('.grid-scrollable-wrapper'),
+      document.querySelector('[role="grid"]'),
     ];
 
     for (const el of possibleTopElements) {
@@ -127,140 +159,52 @@
       }
     }
 
-    // If we still don't have a good boundary, use the row headers top position
     if (gridTopBoundary === 0 && rowHeaders) {
       gridTopBoundary = rowHeaders.getBoundingClientRect().top;
     }
-
-    // Fallback: estimate based on typical Sheets UI (toolbar + formula bar ~ 140px)
     if (gridTopBoundary === 0) {
       gridTopBoundary = 140;
     }
 
-    const rowInfo = {
-      rowIndex: Math.round(cellRect.top),
-      top: cellRect.top,
-      left: leftEdge,
-      width: width,
-      height: rowHeight,
-      gridTop: gridTopBoundary
-    };
-
-    // Skip if same row
-    if (lastHighlightedRow !== null && Math.abs(lastHighlightedRow - rowInfo.rowIndex) < 2) {
-      return;
-    }
-    lastHighlightedRow = rowInfo.rowIndex;
-
-    applyHighlight(rowInfo);
-  }
-
-  function applyHighlight(rowInfo) {
-    if (!highlightOverlay) createOverlay();
-
-    const mode = MODES[currentMode];
-    if (!mode) return;
-
-    // Calculate clipping if the row is partially above the grid area
-    let top = rowInfo.top;
-    let height = rowInfo.height;
+    // Calculate clipping
+    const top = cellRect.top;
     let clipTop = 0;
 
-    if (top < rowInfo.gridTop) {
-      // Row is partially or fully above the visible grid area
-      clipTop = rowInfo.gridTop - top;
-      if (clipTop >= height) {
-        // Row is completely above the grid - hide the highlight
-        highlightOverlay.style.cssText = 'display: none;';
+    if (top < gridTopBoundary) {
+      clipTop = gridTopBoundary - top;
+      if (clipTop >= rowHeight) {
+        highlightOverlay.style.display = 'none';
         return;
       }
     }
 
-    // Build the complete style string
-    // z-index 100 keeps it above the grid but below modals/dialogs
-    let styleStr = `
-      position: fixed;
-      pointer-events: none;
-      z-index: 100;
-      top: ${top}px;
-      left: ${rowInfo.left}px;
-      width: ${rowInfo.width}px;
-      height: ${height}px;
-      box-sizing: border-box;
-      clip-path: inset(${clipTop}px 0 0 0);
-    `;
+    // Apply styles directly to properties for better performance
+    highlightOverlay.style.display = 'block';
+    highlightOverlay.style.top = top + 'px';
+    highlightOverlay.style.left = leftEdge + 'px';
+    highlightOverlay.style.width = width + 'px';
+    highlightOverlay.style.height = rowHeight + 'px';
+    highlightOverlay.style.clipPath = `inset(${clipTop}px 0 0 0)`;
 
-    if (mode.type === 'fill') {
-      styleStr += `
-        background-color: ${mode.color};
-        mix-blend-mode: ${mode.blendMode || 'normal'};
-      `;
-    } else if (mode.type === 'border') {
-      styleStr += `
-        background-color: transparent;
-        border: 2px solid ${mode.color};
-      `;
+    // Apply mode-specific styles
+    const mode = MODES[currentMode];
+    if (mode) {
+      if (mode.type === 'fill') {
+        highlightOverlay.style.backgroundColor = mode.color;
+        highlightOverlay.style.mixBlendMode = mode.blendMode || 'normal';
+        highlightOverlay.style.border = 'none';
+      } else if (mode.type === 'border') {
+        highlightOverlay.style.backgroundColor = 'transparent';
+        highlightOverlay.style.border = `2px solid ${mode.color}`;
+        highlightOverlay.style.mixBlendMode = 'normal';
+      }
     }
-
-    highlightOverlay.style.cssText = styleStr;
-
-    // Debug
-    console.log('Highlight applied:', {
-      top: rowInfo.top,
-      left: rowInfo.left,
-      width: rowInfo.width,
-      height: rowInfo.height,
-      gridTop: rowInfo.gridTop,
-      clipTop: clipTop,
-      mode: currentMode
-    });
   }
 
   function removeHighlight() {
     if (highlightOverlay) {
-      highlightOverlay.style.cssText = 'display: none;';
+      highlightOverlay.style.display = 'none';
     }
-    lastHighlightedRow = null;
-  }
-
-  function observeSheetChanges() {
-    const observer = new MutationObserver(function(mutations) {
-      if (currentMode !== 'off') {
-        clearTimeout(window.highlightUpdateTimeout);
-        window.highlightUpdateTimeout = setTimeout(updateHighlight, 50);
-      }
-    });
-
-    const startObserving = () => {
-      const grid = document.querySelector('[role="grid"]') ||
-                   document.querySelector('.grid-container') ||
-                   document.querySelector('#docs-editor-container');
-
-      if (grid) {
-        observer.observe(grid, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-          attributeFilter: ['style', 'class', 'transform']
-        });
-      } else {
-        setTimeout(startObserving, 500);
-      }
-    };
-
-    startObserving();
-
-    document.addEventListener('scroll', function() {
-      if (currentMode !== 'off') {
-        setTimeout(updateHighlight, 10);
-      }
-    }, true);
-
-    document.addEventListener('wheel', function() {
-      if (currentMode !== 'off') {
-        setTimeout(updateHighlight, 50);
-      }
-    }, true);
   }
 
   if (document.readyState === 'loading') {
