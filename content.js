@@ -121,22 +121,47 @@
 
     const cellRect = activeCellBorder.getBoundingClientRect();
 
-    // Get row height - use the active cell border height which accounts for wrapped text
-    let rowHeight = cellRect.height;
-    if (rowHeight < 10) {
-      const cellInput = document.querySelector('.cell-input');
-      if (cellInput) {
-        rowHeight = Math.max(rowHeight, cellInput.getBoundingClientRect().height);
-      }
-      if (rowHeight < 10) rowHeight = 21;
-    }
-
-    // Get left edge (after row numbers)
+    // Get left edge (after row numbers) - need this first for row height calculation
     let leftEdge = 0;
     const rowHeaders = document.querySelector('.row-headers-wrapper');
     if (rowHeaders) {
       leftEdge = rowHeaders.getBoundingClientRect().right;
     }
+
+    // Get row height - need to find the actual row height for wrapped cells
+    let rowHeight = cellRect.height;
+
+    // The active-cell-border may not reflect wrapped row height
+    // Try to find the corresponding row header cell which has the correct height
+    if (rowHeaders) {
+      // Find all row header cells and match by vertical position
+      const rowHeaderCells = rowHeaders.querySelectorAll('.row-header-wrapper');
+      for (const headerCell of rowHeaderCells) {
+        const headerRect = headerCell.getBoundingClientRect();
+        // Check if this header aligns with our cell (within 2px tolerance)
+        if (Math.abs(headerRect.top - cellRect.top) < 2) {
+          rowHeight = headerRect.height;
+          break;
+        }
+      }
+    }
+
+    // Fallback: try to get height from the selection box or other elements
+    if (rowHeight < 10) {
+      const selectionBox = document.querySelector('.selection-box');
+      if (selectionBox) {
+        rowHeight = Math.max(rowHeight, selectionBox.getBoundingClientRect().height);
+      }
+    }
+
+    if (rowHeight < 10) {
+      const cellInput = document.querySelector('.cell-input');
+      if (cellInput) {
+        rowHeight = Math.max(rowHeight, cellInput.getBoundingClientRect().height);
+      }
+    }
+
+    if (rowHeight < 10) rowHeight = 21;
 
     // Get right edge - find the grid container's right boundary
     let rightEdge = window.innerWidth;
