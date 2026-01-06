@@ -78,7 +78,7 @@
     highlightOverlay.style.cssText = `
       position: fixed;
       pointer-events: none;
-      z-index: 100;
+      z-index: 1;
       display: none;
       box-sizing: border-box;
     `;
