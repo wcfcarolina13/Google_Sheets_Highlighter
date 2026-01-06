@@ -78,11 +78,21 @@
     highlightOverlay.style.cssText = `
       position: fixed;
       pointer-events: none;
-      z-index: 1;
+      z-index: 0;
       display: none;
       box-sizing: border-box;
     `;
-    document.body.appendChild(highlightOverlay);
+
+    // Try to insert into the grid container so we're naturally below popups/dialogs
+    // that are appended to body or higher-level containers
+    const gridContainer = document.querySelector('.grid-scrollable-wrapper') ||
+                          document.querySelector('[role="grid"]') ||
+                          document.querySelector('.waffle-container');
+    if (gridContainer) {
+      gridContainer.appendChild(highlightOverlay);
+    } else {
+      document.body.appendChild(highlightOverlay);
+    }
   }
 
   function updateModeStyle() {
