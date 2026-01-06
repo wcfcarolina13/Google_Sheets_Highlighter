@@ -130,37 +130,45 @@
 
     // Get row height - need to find the actual row height for wrapped cells
     let rowHeight = cellRect.height;
+    const cellTop = cellRect.top;
 
-    // The active-cell-border may not reflect wrapped row height
-    // Try to find the corresponding row header cell which has the correct height
-    if (rowHeaders) {
-      // Find all row header cells and match by vertical position
-      const rowHeaderCells = rowHeaders.querySelectorAll('.row-header-wrapper');
-      for (const headerCell of rowHeaderCells) {
-        const headerRect = headerCell.getBoundingClientRect();
-        // Check if this header aligns with our cell (within 2px tolerance)
-        if (Math.abs(headerRect.top - cellRect.top) < 2) {
-          rowHeight = headerRect.height;
+    // Method 1: Find the row number cell on the left - it has the correct row height
+    const rowNumberCells = document.querySelectorAll('.row-header');
+    for (const rowNumCell of rowNumberCells) {
+      const rowNumRect = rowNumCell.getBoundingClientRect();
+      // Check if this row number aligns with our cell vertically (within 5px tolerance)
+      if (rowNumRect.top <= cellTop + 5 && rowNumRect.bottom >= cellTop + 5) {
+        rowHeight = rowNumRect.height;
+        break;
+      }
+    }
+
+    // Method 2: Try looking at the canvas cell rendering
+    if (rowHeight < 15) {
+      // Find cells rendered at the same vertical position
+      const allCells = document.querySelectorAll('[data-row]');
+      for (const cell of allCells) {
+        const cr = cell.getBoundingClientRect();
+        if (Math.abs(cr.top - cellTop) < 3 && cr.height > rowHeight) {
+          rowHeight = cr.height;
           break;
         }
       }
     }
 
-    // Fallback: try to get height from the selection box or other elements
-    if (rowHeight < 10) {
-      const selectionBox = document.querySelector('.selection-box');
-      if (selectionBox) {
-        rowHeight = Math.max(rowHeight, selectionBox.getBoundingClientRect().height);
+    // Method 3: Check the waffle cells
+    if (rowHeight < 15) {
+      const waffleCells = document.querySelectorAll('.cell');
+      for (const cell of waffleCells) {
+        const cr = cell.getBoundingClientRect();
+        if (Math.abs(cr.top - cellTop) < 3 && cr.height > rowHeight) {
+          rowHeight = cr.height;
+          break;
+        }
       }
     }
 
-    if (rowHeight < 10) {
-      const cellInput = document.querySelector('.cell-input');
-      if (cellInput) {
-        rowHeight = Math.max(rowHeight, cellInput.getBoundingClientRect().height);
-      }
-    }
-
+    // Fallback
     if (rowHeight < 10) rowHeight = 21;
 
     // Get right edge - find the grid container's right boundary
