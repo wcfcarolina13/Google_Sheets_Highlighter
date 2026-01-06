@@ -56,6 +56,15 @@
     document.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
     document.addEventListener('wheel', scheduleUpdate, { capture: true, passive: true });
 
+    // Watch for DOM changes that might affect row heights (text wrapping, content changes)
+    const observer = new MutationObserver(scheduleUpdate);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class']
+    });
+
     // Start animation loop for smooth updates
     startAnimationLoop();
 
@@ -128,42 +137,102 @@
       leftEdge = rowHeaders.getBoundingClientRect().right;
     }
 
-    // Get row height - need to find the actual row height for wrapped cells
+    // Get row height and top position - need to find the actual row dimensions for wrapped cells
+    // The active cell border may not reflect the full row height, so we need to find the row header
     let rowHeight = cellRect.height;
+    let rowTop = cellRect.top;
     const cellTop = cellRect.top;
+    const cellBottom = cellRect.bottom;
+    const cellMidY = (cellTop + cellBottom) / 2;
 
-    // Method 1: Find the row number cell on the left - it has the correct row height
-    const rowNumberCells = document.querySelectorAll('.row-header');
-    for (const rowNumCell of rowNumberCells) {
-      const rowNumRect = rowNumCell.getBoundingClientRect();
-      // Check if this row number aligns with our cell vertically (within 5px tolerance)
-      if (rowNumRect.top <= cellTop + 5 && rowNumRect.bottom >= cellTop + 5) {
-        rowHeight = rowNumRect.height;
-        break;
-      }
-    }
-
-    // Method 2: Try looking at the canvas cell rendering
-    if (rowHeight < 15) {
-      // Find cells rendered at the same vertical position
-      const allCells = document.querySelectorAll('[data-row]');
-      for (const cell of allCells) {
-        const cr = cell.getBoundingClientRect();
-        if (Math.abs(cr.top - cellTop) < 3 && cr.height > rowHeight) {
-          rowHeight = cr.height;
+    // Method 1: Find the row header cell in the row-headers-wrapper
+    // These are the row number cells on the left side that span the full row height
+    if (rowHeaders) {
+      const rowHeaderCells = rowHeaders.querySelectorAll('div');
+      for (const cell of rowHeaderCells) {
+        const rect = cell.getBoundingClientRect();
+        // Check if this cell contains our active cell's vertical midpoint
+        if (rect.height > 10 && rect.top <= cellMidY && rect.bottom >= cellMidY) {
+          rowHeight = rect.height;
+          rowTop = rect.top;
           break;
         }
       }
     }
 
-    // Method 3: Check the waffle cells
-    if (rowHeight < 15) {
-      const waffleCells = document.querySelectorAll('.cell');
-      for (const cell of waffleCells) {
-        const cr = cell.getBoundingClientRect();
-        if (Math.abs(cr.top - cellTop) < 3 && cr.height > rowHeight) {
-          rowHeight = cr.height;
-          break;
+    // Method 2: Try the .row-header-canvas-container which has individual row divs
+    if (rowHeight === cellRect.height) {
+      const canvasContainer = document.querySelector('.row-header-canvas-container');
+      if (canvasContainer) {
+        const children = canvasContainer.children;
+        for (const child of children) {
+          const rect = child.getBoundingClientRect();
+          if (rect.height > 10 && rect.top <= cellMidY && rect.bottom >= cellMidY) {
+            rowHeight = rect.height;
+            rowTop = rect.top;
+            break;
+          }
+        }
+      }
+    }
+
+    // Method 3: Look for elements with explicit row styling in the grid
+    if (rowHeight === cellRect.height) {
+      // Try to find any element that spans the row at this position
+      const gridContainer = document.querySelector('.grid-scrollable-wrapper') ||
+                           document.querySelector('[role="grid"]');
+      if (gridContainer) {
+        // Check elements that might represent rows
+        const potentialRows = gridContainer.querySelectorAll('[data-row], .cell-input');
+        for (const el of potentialRows) {
+          const rect = el.getBoundingClientRect();
+          if (rect.height > rowHeight && rect.top <= cellMidY && rect.bottom >= cellMidY) {
+            rowHeight = rect.height;
+            rowTop = rect.top;
+            break;
+          }
+        }
+      }
+    }
+
+    // Method 4: Parse the active cell's computed positioning from Google Sheets internal structure
+    // The active cell often has sibling elements or parent containers with full row info
+    if (rowHeight === cellRect.height && activeCellBorder.parentElement) {
+      const parent = activeCellBorder.parentElement;
+      const siblings = parent.children;
+      for (const sibling of siblings) {
+        if (sibling !== activeCellBorder) {
+          const rect = sibling.getBoundingClientRect();
+          if (rect.height > rowHeight && rect.top <= cellMidY && rect.bottom >= cellMidY) {
+            rowHeight = rect.height;
+            rowTop = rect.top;
+            break;
+          }
+        }
+      }
+    }
+
+    // Method 5: Look at the native selection background which Google Sheets renders
+    // to match the full row height
+    if (rowHeight === cellRect.height) {
+      const selectionBg = document.querySelector('.native-selection');
+      if (selectionBg) {
+        const rect = selectionBg.getBoundingClientRect();
+        if (rect.height > rowHeight) {
+          rowHeight = rect.height;
+          rowTop = rect.top;
+        }
+      }
+    }
+
+    // Method 6: Check the cell editor input area which expands to row height
+    if (rowHeight === cellRect.height) {
+      const cellInput = document.querySelector('.cell-input');
+      if (cellInput) {
+        const rect = cellInput.getBoundingClientRect();
+        if (rect.height > rowHeight && rect.top <= cellMidY && rect.bottom >= cellMidY) {
+          rowHeight = rect.height;
+          rowTop = rect.top;
         }
       }
     }
@@ -213,8 +282,8 @@
       gridTopBoundary = 140;
     }
 
-    // Calculate clipping for top
-    const top = cellRect.top;
+    // Calculate clipping for top - use rowTop which reflects the full row position
+    const top = rowTop;
     let clipTop = 0;
 
     if (top < gridTopBoundary) {
