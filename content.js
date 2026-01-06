@@ -121,7 +121,7 @@
 
     const cellRect = activeCellBorder.getBoundingClientRect();
 
-    // Get row height
+    // Get row height - use the active cell border height which accounts for wrapped text
     let rowHeight = cellRect.height;
     if (rowHeight < 10) {
       const cellInput = document.querySelector('.cell-input');
@@ -131,15 +131,29 @@
       if (rowHeight < 10) rowHeight = 21;
     }
 
-    // Get left edge
+    // Get left edge (after row numbers)
     let leftEdge = 0;
     const rowHeaders = document.querySelector('.row-headers-wrapper');
     if (rowHeaders) {
       leftEdge = rowHeaders.getBoundingClientRect().right;
     }
 
-    // Get width
-    const width = window.innerWidth - leftEdge;
+    // Get right edge - find the grid container's right boundary
+    let rightEdge = window.innerWidth;
+    const gridScrollable = document.querySelector('.grid-scrollable-wrapper');
+    if (gridScrollable) {
+      rightEdge = gridScrollable.getBoundingClientRect().right;
+    } else {
+      // Fallback: try to find other containers
+      const gridContainer = document.querySelector('[role="grid"]') ||
+                           document.querySelector('.waffle-container');
+      if (gridContainer) {
+        rightEdge = gridContainer.getBoundingClientRect().right;
+      }
+    }
+
+    // Calculate width
+    const width = rightEdge - leftEdge;
 
     // Find grid top boundary
     let gridTopBoundary = 0;
@@ -166,7 +180,7 @@
       gridTopBoundary = 140;
     }
 
-    // Calculate clipping
+    // Calculate clipping for top
     const top = cellRect.top;
     let clipTop = 0;
 
